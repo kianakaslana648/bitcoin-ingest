@@ -7,7 +7,7 @@ Bitcoin Ingest is a pipeline to fetch and stream Bitcoin blockchain data in real
 - Real-time Bitcoin data ingestion  
 - Kafka producer integration  
 - Supports APIs like mempool.space  
-- Dockerized deployment
+- Dockerized deployment for local testing
 
 ## Architecture
 [Bitcoin APIs] --> [Kafka Producer (bitcoin-ingest)] --> [Kafka Topics] --> [Flink Streaming Jobs] --> [Iceberg Tables (Trino + Minio + Hive Metastore)]

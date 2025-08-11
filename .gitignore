@@ -3,3 +3,5 @@
 **/data/
 **/dependency-reduced-pom.xml
 **/simple_word_count
+
+.vscode/

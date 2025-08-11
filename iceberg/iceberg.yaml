@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  hive-metastore-db:
+    image: postgres:latest
+    container_name: hive-metastore-db
+    environment:
+      POSTGRES_DB: metastore
+      POSTGRES_USER: hiveuser
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - hive-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hiveuser -d metastore"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: hive-metastore
+    depends_on:
+      hive-metastore-db:
+        condition: service_healthy
+    environment:
+      DB_DRIVER: postgres
+      SERVICE_NAME: metastore
+      HIVE_METASTORE_DB_TYPE: postgres
+      HIVE_METASTORE_DB_HOST: hive-metastore-db
+      HIVE_METASTORE_DB_PORT: 5432
+      HIVE_METASTORE_DB_USER: hiveuser
+      HIVE_METASTORE_DB_PASSWORD: password
+    ports:
+      - "9083:9083"
+    volumes:
+      - warehouse:/opt/hive/data/warehouse
+      - ./hive/conf/hive-site.xml:/opt/hive/conf/hive-site.xml:ro
+      - ./lib/postgresql-42.7.3.jar:/opt/hive/lib/postgresql-42.7.3.jar:ro
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9083"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      bash -c "/opt/hive/bin/schematool -dbType postgres -initSchema && /opt/hive/bin/hive --service metastore"
+    networks:
+      - hive-net
+      
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    volumes:
+      - miniodata:/data
+    networks:
+      - hive-net
+
+  trino:
+    image: trinodb/trino:476
+    container_name: trino
+    depends_on:
+      - hive-metastore
+      - minio
+    ports:
+      - "8080:8080"
+    volumes:
+      # - ./trino/catalog:/etc/trino/catalog
+      - ./trino:/usr/lib/trino/etc:ro
+    networks:
+      - hive-net
+
+volumes:
+  warehouse:
+  pgdata:
+  miniodata:
+    driver: local
+
+networks:
+  hive-net:
+    driver: bridge

@@ -45,6 +45,7 @@ cd iceberg
 docker-compose -f iceberg.yaml up -d
 cd ..
 ```
+Minio UI will be default on http://localhost:9101/ if configured locally
 Trino UI will be default on http://localhost:8080/ if configured locally
 ### Kafka Producer Cronjob (bitcoin-cronjob)
 ```bash

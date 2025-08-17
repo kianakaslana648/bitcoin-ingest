@@ -25,7 +25,7 @@ serde = SerDeInfo(
     parameters={'field.delim': ','}  # optional
 )
 
-sd = sd = StorageDescriptor(
+sd = StorageDescriptor(
     cols=columns,
     serdeInfo=serde,
 )

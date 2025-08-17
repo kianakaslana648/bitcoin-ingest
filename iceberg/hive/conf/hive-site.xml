@@ -23,13 +23,35 @@
   <!-- Warehouse directory -->
   <property>
     <name>hive.metastore.warehouse.dir</name>
-    <value>/opt/hive/data/warehouse</value>
+    <value>s3a://test-bucket/warehouse</value>
   </property>
 
   <!-- Thrift URI for metastore -->
   <property>
     <name>hive.metastore.uris</name>
     <value>thrift://hive-metastore:9083</value>
+  </property>
+
+  <property>
+      <name>fs.s3a.impl</name>
+      <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+  </property>
+
+  <property>
+      <name>fs.s3a.endpoint</name>
+      <value>http://minio:9000</value>
+  </property>
+  <property>
+      <name>fs.s3a.path.style.access</name>
+      <value>true</value>
+  </property>
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>minioadmin</value>
+  </property>
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>minioadmin</value>
   </property>
 </configuration>
 

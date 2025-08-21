@@ -9,6 +9,11 @@ services:
     command: jobmanager
     environment:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
+    networks:
+      - kafka-net
+      - iceberg-net
+    volumes:
+      - ./hive/conf:/opt/hive/conf
 
   taskmanager:
     image: flink:1.20.2-scala_2.12
@@ -18,3 +23,14 @@ services:
     command: taskmanager
     environment:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
+    networks:
+      - kafka-net
+      - iceberg-net
+    volumes:
+      - ./hive/conf:/opt/hive/conf
+
+networks:
+  kafka-net:
+    external: true
+  iceberg-net:
+    external: true

@@ -1,28 +1,30 @@
 version: '3.8'
 
-networks:
-  kafka-network:
-    external: true
-
 services:
   zookeeper:
+    hostname: zookeeper
+    container_name: zookeeper
     image: confluentinc/cp-zookeeper:latest
     ports:
       - "2181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
+    networks:
+      - kafka-net
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
       - zookeeper-log:/var/lib/zookeeper/log
-    networks:
-      - kafka-network
 
   kafka:
+    hostname: kafka
+    container_name: kafka
     image: confluentinc/cp-kafka:latest
     depends_on:
       - zookeeper
     ports:
       - "9092:9092"
+    networks:
+      - kafka-net
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       
@@ -40,24 +42,29 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
     volumes:
       - kafka-data:/var/lib/kafka/data
-    networks:
-      - kafka-network
 
   kafka-ui:
+    hostname: kafka-ui
+    container_name: kafka-ui
     image: provectuslabs/kafka-ui:latest
     depends_on:
       - kafka
     ports:
       - "9000:8080"
+    networks:
+      - kafka-net
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
     restart: unless-stopped
-    networks:
-      - kafka-network
 
 volumes:
   zookeeper-data:
   zookeeper-log:
   kafka-data:
+
+
+networks:
+  kafka-net:
+    external: true

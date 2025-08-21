@@ -1,16 +1,17 @@
-version: "3.8"
+version: '3.8'
 
 services:
   bitcoin-cronjob:
     build:
       context: .
       dockerfile: Dockerfile
+    networks:
+      - kafka-net
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     restart: unless-stopped
-    networks:
-      - kafka-network
+
 
 networks:
-  kafka-network:
+  kafka-net:
     external: true

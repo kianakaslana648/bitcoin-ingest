@@ -1,97 +1,136 @@
-import org.apache.flink.api.common.eventtime.WatermarkStrategy;
-import org.apache.flink.api.common.serialization.SimpleStringSchema;
-import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
-import org.apache.flink.streaming.api.functions.ProcessFunction;
-import org.apache.flink.util.Collector;
+import org.apache.flink.streaming.api.scala._
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer
+import org.apache.flink.api.common.serialization.SimpleStringSchema
+import org.apache.flink.table.api.EnvironmentSettings
+import org.apache.flink.table.api.bridge.scala.StreamTableEnvironment
+import org.apache.flink.table.data.{GenericRowData, RowData}
 
-import org.apache.iceberg.flink.sink.FlinkSink;
-import org.apache.iceberg.flink.TableLoader;
-import org.apache.iceberg.Schema;
-import org.apache.iceberg.types.Types;
-import org.apache.iceberg.flink.data.FlinkStruct;
-import org.apache.flink.types.Row;
-import org.apache.flink.api.common.typeinfo.Types as FlinkTypes;
+import org.apache.iceberg.flink.sink.FlinkSink
+import org.apache.iceberg.flink.{CatalogLoader, TableLoader}
+import org.apache.iceberg.catalog.TableIdentifier
+import org.apache.hadoop.conf.Configuration
 
-import java.util.Properties;
+import com.fasterxml.jackson.databind.ObjectMapper
+import java.time.{Instant, ZoneOffset, ZonedDateTime}
+import java.util.{Collections, Properties}
 
-public class BitcoinMempoolIngestion {
+// Case classes
+case class PriceRow(source: String, event_time: java.sql.Timestamp, event_hour: Int, usd_price: java.lang.Integer)
+case class BlocktipRow(source: String, event_time: java.sql.Timestamp, event_hour: Int, block_height: java.lang.Long, block_hash: String)
+case class FeeRow(source: String, event_time: java.sql.Timestamp, event_hour: Int, fastest_fee: java.lang.Integer, half_hour_fee: java.lang.Integer, hour_fee: java.lang.Integer, economy_fee: java.lang.Integer, minimum_fee: java.lang.Integer)
 
-    public static void main(String[] args) throws Exception {
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+object BitcoinMempoolIngestion {
 
-        Properties props = new Properties();
-        props.setProperty("bootstrap.servers", "kafka:9092");
-        props.setProperty("group.id", "mempool-flink-iceberg");
-        props.setProperty("auto.offset.reset", "earliest");
+  // --- Transformation helpers ---
+  def priceRowToRowData(row: PriceRow): RowData = {
+    val r = new GenericRowData(4)
+    r.setField(0, row.source)
+    r.setField(1, row.event_time.getTime)
+    r.setField(2, row.event_hour)
+    r.setField(3, row.usd_price)
+    r
+  }
 
-        FlinkKafkaConsumer<Tuple2<String, String>> consumer = new FlinkKafkaConsumer<>(
-            "mempool",
-            new KafkaKeyValueSchema(),
-            props
-        );
+  def blocktipRowToRowData(row: BlocktipRow): RowData = {
+    val r = new GenericRowData(5)
+    r.setField(0, row.source)
+    r.setField(1, row.event_time.getTime)
+    r.setField(2, row.event_hour)
+    r.setField(3, row.block_height)
+    r.setField(4, row.block_hash)
+    r
+  }
 
-        DataStream<Tuple2<String, String>> kafkaStream = env.addSource(consumer);
+  def feesRowToRowData(row: FeeRow): RowData = {
+    val r = new GenericRowData(8)
+    r.setField(0, row.source)
+    r.setField(1, row.event_time.getTime)
+    r.setField(2, row.event_hour)
+    r.setField(3, row.fastest_fee)
+    r.setField(4, row.half_hour_fee)
+    r.setField(5, row.hour_fee)
+    r.setField(6, row.economy_fee)
+    r.setField(7, row.minimum_fee)
+    r
+  }
 
-        // Separate streams for price, blocktip, fees
-        DataStream<Row> priceStream = kafkaStream
-            .filter(r -> "price".equals(r.f0))
-            .map(r -> parsePriceToRow(r.f1))
-            .returns(FlinkTypes.ROW(FlinkTypes.STRING, FlinkTypes.DOUBLE));  // example schema: (currency, price)
+  def main(args: Array[String]): Unit = {
+    val env = StreamExecutionEnvironment.getExecutionEnvironment
+    env.enableCheckpointing(10000)
+    val settings = EnvironmentSettings.newInstance().inStreamingMode().build()
+    val tEnv = StreamTableEnvironment.create(env, settings)
 
-        DataStream<Row> blocktipStream = kafkaStream
-            .filter(r -> "blocktip".equals(r.f0))
-            .map(r -> parseBlocktipToRow(r.f1))
-            .returns(FlinkTypes.ROW(FlinkTypes.LONG, FlinkTypes.LONG)); // example schema: (blockHeight, timestamp)
+    val hadoopConf = new Configuration()
+    hadoopConf.addResource(new org.apache.hadoop.fs.Path("/opt/hive/conf/hive-site.xml"))
 
-        DataStream<Row> feesStream = kafkaStream
-            .filter(r -> "fees".equals(r.f0))
-            .map(r -> parseFeesToRow(r.f1))
-            .returns(FlinkTypes.ROW(FlinkTypes.STRING, FlinkTypes.DOUBLE)); // example schema: (feeType, feeValue)
+    val catalogLoader = CatalogLoader.hive("hive_catalog", hadoopConf, Collections.emptyMap[String, String]())
 
-        // Load Iceberg tables
-        TableLoader priceTableLoader = TableLoader.fromHiveCatalog(
-            "hive",                 // catalog name, must match catalog config
-            "my_db.mempool_price"   // fully qualified table name: database.table
-        );
-        TableLoader blocktipTableLoader = TableLoader.fromHadoopTable("hdfs://path/to/mempool_blocktip");
-        TableLoader feesTableLoader = TableLoader.fromHadoopTable("hdfs://path/to/mempool_fees");
+    implicit val typeInfo = createTypeInformation[String]
 
-        // Sink to Iceberg for price
-        FlinkSink.forRow(priceStream)
-            .tableLoader(priceTableLoader)
-            .build();
+    // Kafka consumer
+    val props = new Properties()
+    props.setProperty("bootstrap.servers", "kafka:9092")
+    props.setProperty("group.id", "flink-iceberg-consumer")
 
-        // Sink to Iceberg for blocktip
-        FlinkSink.forRow(blocktipStream)
-            .tableLoader(blocktipTableLoader)
-            .build();
+    val kafkaStream = env.addSource(new FlinkKafkaConsumer[String]("mempool", new SimpleStringSchema(), props))
+    val mapper = new ObjectMapper()
 
-        // Sink to Iceberg for fees
-        FlinkSink.forRow(feesStream)
-            .tableLoader(feesTableLoader)
-            .build();
-
-        env.execute("Mempool Flink Kafka to Iceberg Job");
+    def extractHour(tsMillis: Long): Int = {
+      val zdt = ZonedDateTime.ofInstant(Instant.ofEpochMilli(tsMillis), ZoneOffset.UTC)
+      zdt.getYear * 1000000 + zdt.getMonthValue * 10000 + zdt.getDayOfMonth * 100 + zdt.getHour
     }
 
-    // Example parse functions from JSON string to Row objects
-    // (Use your preferred JSON lib, e.g. Jackson or Gson)
-    private static Row parsePriceToRow(String json) {
-        // parse json to extract currency and price
-        // dummy example:
-        return Row.of("BTC", 26000.5);
+    val parsedStream = kafkaStream.map(jsonStr => mapper.readTree(jsonStr))
+
+    // --- PRICE ---
+    val priceStream = parsedStream.filter(_.get("source").asText() == "price").map { node =>
+      val ts = node.get("timestamp").asLong()
+      val usd = mapper.readTree(node.get("data").asText()).path("bitcoin").path("usd").asInt()
+      PriceRow(node.get("source").asText(), new java.sql.Timestamp(ts), extractHour(ts), usd)
     }
 
-    private static Row parseBlocktipToRow(String json) {
-        // parse json to extract block height and timestamp
-        return Row.of(800_000L, System.currentTimeMillis());
+    // --- BLOCKTIP ---
+    val blocktipStream = parsedStream.filter(_.get("source").asText() == "blocktip").map { node =>
+      val ts = node.get("timestamp").asLong()
+      val dataNode = mapper.readTree(node.get("data").asText())
+      BlocktipRow(node.get("source").asText(), new java.sql.Timestamp(ts), extractHour(ts), dataNode.path("height").asLong(), dataNode.path("hash").asText())
     }
 
-    private static Row parseFeesToRow(String json) {
-        // parse json to extract feeType and feeValue
-        return Row.of("priority", 1.2);
+    // --- FEES ---
+    val feesStream = parsedStream.filter(_.get("source").asText() == "fees").map { node =>
+      val ts = node.get("timestamp").asLong()
+      val dataNode = mapper.readTree(node.get("data").asText())
+      FeeRow(node.get("source").asText(), new java.sql.Timestamp(ts), extractHour(ts),
+        dataNode.path("fastestFee").asInt(),
+        dataNode.path("halfHourFee").asInt(),
+        dataNode.path("hourFee").asInt(),
+        dataNode.path("economyFee").asInt(),
+        dataNode.path("minimumFee").asInt())
     }
+
+
+
+    // Iceberg table loaders
+    val priceTable = TableLoader.fromCatalog(catalogLoader, TableIdentifier.of("mempool", "mempool_price"))
+    val blocktipTable = TableLoader.fromCatalog(catalogLoader, TableIdentifier.of("mempool", "mempool_blocktip"))
+    val feesTable = TableLoader.fromCatalog(catalogLoader, TableIdentifier.of("mempool", "mempool_fee"))
+
+    // Sink to Iceberg
+    FlinkSink.forRowData(priceStream.map(priceRowToRowData _).javaStream)
+      .tableLoader(priceTable)
+      .overwrite(false)
+      .append()
+
+    FlinkSink.forRowData(blocktipStream.map(blocktipRowToRowData _).javaStream)
+      .tableLoader(blocktipTable)
+      .overwrite(false)
+      .append()
+
+    FlinkSink.forRowData(feesStream.map(feesRowToRowData _).javaStream)
+      .tableLoader(feesTable)
+      .overwrite(false)
+      .append()
+
+    env.execute("Kafka -> Flink -> Iceberg 1.7.2")
+  }
 }

@@ -16,7 +16,6 @@ public class BitcoinKafkaCronJob {
     private static final String TOPIC = "mempool";
 
     private static final String BTC_PRICE_API = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd";
-    private static final String BLOCKS_TIP_API = "https://mempool.space/api/v1/blocks/tip";
     private static final String FEES_RECOMMENDED_API = "https://mempool.space/api/v1/fees/recommended";
 
     private static final int MAX_RETRIES = 5;
@@ -101,10 +100,19 @@ public class BitcoinKafkaCronJob {
     }
 
     private void sendBlockTip() throws Exception {
-        String blockTipJson = fetchDataWithRetry(BLOCKS_TIP_API);
-        sendToKafka("blocktip", blockTipJson);
-    }
+        // Fetch block height and hash
+        String blockHeight = fetchDataWithRetry("https://mempool.space/api/blocks/tip/height");
+        String blockHash = fetchDataWithRetry("https://mempool.space/api/blocks/tip/hash");
 
+        // Combine into a JSON object
+        ObjectNode blockTipNode = mapper.createObjectNode();
+        blockTipNode.put("height", blockHeight);
+        blockTipNode.put("hash", blockHash);
+
+        // Send combined data to Kafka
+        sendToKafka("blocktip", mapper.writeValueAsString(blockTipNode));
+    }
+    
     private void sendFeesRecommended() throws Exception {
         String feesJson = fetchDataWithRetry(FEES_RECOMMENDED_API);
         sendToKafka("fees", feesJson);
@@ -128,7 +136,7 @@ public class BitcoinKafkaCronJob {
     }
 
     public static void main(String[] args) {
-        String kafkaServers = "kafka:9092";
+        String kafkaServers = System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092");
         BitcoinKafkaCronJob job = new BitcoinKafkaCronJob(kafkaServers);
 
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();

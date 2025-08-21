@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<configuration>
+
+  <!-- ================= Hive Metastore ================= -->
+  <property>
+    <name>hive.metastore.uris</name>
+    <value>thrift://hive-metastore:9083</value>
+    <description>URI for the remote Hive metastore</description>
+  </property>
+
+  <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>s3://bitcoin-ingest/warehouse</value>
+    <description>Default Hive warehouse path (Iceberg tables will reside here)</description>
+  </property>
+
+  <!-- ================= S3 / MinIO configs ================= -->
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>minioadmin</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>minioadmin</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.endpoint</name>
+    <value>http://minio:9000</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.path.style.access</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.connection.ssl.enabled</name>
+    <value>false</value>
+  </property>
+
+  <!-- Optional: filesystem implementation -->
+  <property>
+    <name>fs.s3.impl</name>
+    <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+  </property>
+
+  <!-- Optional: Iceberg/Parquet configs -->
+  <property>
+    <name>iceberg.file-format</name>
+    <value>parquet</value>
+  </property>
+
+</configuration>

@@ -39,14 +39,6 @@ price_schema = Schema(
     NestedField(4, "usd_price", IntegerType(), required=False)
 )
 
-# price_spec = (
-#     PartitionSpec.builder_for(price_schema)
-#     .hour("event_time")   # precision to hour
-#     .build()
-# )
-# price_spec = PartitionSpec.builder_for(price_schema).identity("event_hour").build()
-# price_spec = PartitionSpec.for_schema(price_schema).hour("event_time")
-
 # Schema for mempool_blocktip table
 blocktip_schema = Schema(
     NestedField(1, "source", StringType(), required=True),          # "blocktip"
@@ -55,14 +47,6 @@ blocktip_schema = Schema(
     NestedField(4, "block_height", LongType(), required=False),     # blockchain height
     NestedField(5, "block_hash", StringType(), required=False),     # current block hash
 )
-
-# blocktip_spec = (
-#     PartitionSpec.builder_for(price_schema)
-#     .hour("event_time")   # precision to hour
-#     .build()
-# )
-
-# blocktip_spec = PartitionSpec.builder_for(blocktip_schema).identity("event_hour").build()
 
 # Schema for mempool_fee table
 fee_schema = Schema(
@@ -75,14 +59,6 @@ fee_schema = Schema(
     NestedField(7, "economy_fee", IntegerType(), required=False),
     NestedField(8, "minimum_fee", IntegerType(), required=False)
 )
-
-# fee_spec = (
-#     PartitionSpec.builder_for(fee_schema)
-#     .hour("event_time")
-#     .build()
-# )
-
-# fee_spec = PartitionSpec.builder_for(fee_schema).identity("event_hour").build()
 
 
 ###################################################
